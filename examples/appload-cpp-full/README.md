@@ -1,0 +1,125 @@
+# AppLoad example app with QML frontend + C++ backend
+
+A complete example [AppLoad](https://github.com/asivery/rm-appload) application for
+reMarkable tablets (XOVI extension), consisting of a QML frontend and a **C++ backend**
+that is a port of the Rust backend client
+(`backends/appload-clients/rust-backend`) from `asivery/rm-appload`.
+
+The demo extends `examples/appload/full` of rm-appload: the frontend can send four
+different message types, the backend keeps state (counter, stats) and also pushes a
+welcome message to frontends when they connect.
+
+## Directory layout (source)
+
+```
+appload-cpp-full/
+|-> manifest.json          # app metadata (id, name, entry, ...)
+|-> icon.png.b64           # launcher icon, base64-encoded (decoded by the build scripts; drop a real icon.png next to them to override)
+|-> application.qrc        # Qt resource file listing the QML files
+|-> ui/
+|   |-> example.qml        # root QML file (manifest "entry": /ui/example.qml)
+|-> backend/
+|   |-> Makefile           # native / armv7 / aarch64 builds of the backend
+|   |-> src/
+|   |   |-> protocol.h         # wire protocol constants (mirrors src/protocol.h of rm-appload)
+|   |   |-> appload_client.*   # C++ port of the Rust AppLoad/BackendReplier client
+|   |   |-> demo_backend.*     # the demo message handlers (like full/backend/src/main.rs)
+|   |   |-> main.cpp           # entry point: AppLoad app(make_unique<DemoBackend>(), argv[1]).run()
+|-> build-pc.sh            # build for the PC emulator   -> ./output
+|-> build-rm.sh            # build for rM1/rM2 (armv7)   -> ./output-rm
+|-> build-rmpp.sh          # build for rMPP (aarch64)    -> ./output-rmpp
+```
+
+## Build output layout (what AppLoad expects on the device/emulator)
+
+```
+output*/
+|-> manifest.json
+|-> icon.png
+|-> resources.rcc          # compiled with: rcc --binary -o resources.rcc application.qrc
+|-> backend/
+    |-> entry              # the compiled C++ backend binary (executable)
+```
+
+Copy the whole `output*` directory to:
+
+- **Tablet**: `/home/root/xovi/exthome/appload/<any-name>/` (the directory name does not matter)
+- **PC emulator**: the `applications_root` folder of the emulator
+
+## Building
+
+Prerequisites: `rcc` (Qt), `make`, a C++17 compiler. For the tablet builds you also
+need the cross toolchains `arm-linux-gnueabihf-g++` (rM1/rM2) and
+`aarch64-linux-gnu-g++` (rMPP).
+
+```bash
+./build-pc.sh     # PC emulator (native)
+./build-rm.sh     # reMarkable 1 / 2
+./build-rmpp.sh   # reMarkable Paper Pro
+```
+
+The backend alone can also be built by hand:
+
+```bash
+make -C backend          # native  -> backend/entry
+make -C backend rm       # armv7   -> backend/entry
+make -C backend rmpp     # aarch64 -> backend/entry
+```
+
+## The AppLoad backend protocol (implemented in `backend/src/`)
+
+- AppLoad starts the backend binary with **argv[1] = path of a temporary unix socket**.
+- The backend connects with `socket(AF_UNIX, SOCK_SEQPACKET, 0)` + `connect()`.
+- Each message is framed as **two packets**: an 8-byte header
+  `struct { uint32_t msg_type; uint32_t length; }` (see `protocol.h`, mirrors
+  `PacketHeader { int type; int messageLength; }` in `src/protocol.h` of rm-appload),
+  followed by `length` bytes of payload. Maximum payload: **10 MiB** (`length == 0`
+  means an empty payload).
+- Replies use the same framing and are broadcast to all connected frontends.
+- System message types: `0xFFFFFFFF` TERMINATE (delivered once more when the socket
+  closes, then the backend should exit), `0xFFFFFFFE` NEW_COORDINATOR (a frontend
+  connected), `0xFFFFFFFD` LOST_COORDINATOR.
+
+### Demo message types
+
+| Type | Direction | Payload | Reply |
+|------|-----------|---------|-------|
+| 1 `MSG_ECHO_REQUEST` | frontend -> backend | any text | type 101: `Backend responds to message <text>` |
+| 2 `MSG_GET_TIME` | frontend -> backend | empty | type 102: backend wall-clock time |
+| 3 `MSG_INCREMENT` | frontend -> backend | empty | type 103: `counter = <n>` |
+| 4 `MSG_GET_STATS` | frontend -> backend | empty | type 104: uptime / messages / counter |
+| 100 `MSG_WELCOME` | backend -> frontend | greeting | sent when a frontend connects (NEW_COORDINATOR) |
+| 101-104 | backend -> frontend | replies | see above |
+
+## QML <-> backend contract
+
+The root QML file must declare (see README.MD of rm-appload):
+
+```qml
+signal close
+function unloading() { ... }
+```
+
+Communication uses the `net.asivery.AppLoad 1.0` module:
+
+```qml
+AppLoad {
+    id: endpoint
+    applicationID: "cpp-backend-example"   // == "id" in manifest.json
+    onMessageReceived: (type, contents) => { /* ... */ }
+}
+// send to backend:  endpoint.sendMessage(type, contents)
+// kill backend + all frontends:  endpoint.terminate()   (call it in unloading())
+```
+
+Multiple endpoints per app are allowed; all receive all backend messages.
+
+## Notes
+
+- The backend needs **no Qt**, only POSIX sockets — that is the whole point of the
+  AppLoad backend protocol (any language can be used; here: plain C++17).
+- The launcher icon is stored base64-encoded as `icon.png.b64` (binary files cannot be
+  pushed through the GitHub API tools used here). The `build-*.sh` scripts decode it into
+  `output*/icon.png`. To use your own icon, either place a real `icon.png` next to the
+  build scripts (it is then preferred) or regenerate `icon.png.b64` from it
+  (`base64 -w0 icon.png > icon.png.b64`).
