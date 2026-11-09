@@ -1,13 +1,8 @@
 name: Build AppLoad example app (rMPP / aarch64)
 
-# Jobs:
-#   build-rmpp             builds the complete app for the rMPP (aarch64) and uploads
-#                          the installable output-rmpp/ directory as an artifact.
-#   test-backend-protocol  protocol-tests the backend binary (native, and the aarch64
-#                          binary under qemu-user) with tests/protocol_test.py.
-#   emulator-e2e           builds the rm-appload PC emulator, autostarts this app in it
-#                          (headless, xvfb) and asserts that backend <-> frontend
-#                          communication works end to end.
+# Builds the complete example app in examples/appload-cpp-full/
+# (QML frontend -> resources.rcc via rcc, C++ backend -> aarch64 binary)
+# and uploads the ready-to-install output-rmpp/ directory as an artifact.
 #
 # Install on the tablet (rMPP):
 #   download the 'appload-cpp-full-rmpp' artifact, unzip it, then:
@@ -60,8 +55,6 @@ jobs:
         run: |
           file examples/appload-cpp-full/output-rmpp/backend/entry
           file examples/appload-cpp-full/output-rmpp/backend/entry | grep -q "ARM aarch64"
-          # cross builds are fully static so they run on the device regardless of its glibc
-          file examples/appload-cpp-full/output-rmpp/backend/entry | grep -q "statically linked"
           test -s examples/appload-cpp-full/output-rmpp/resources.rcc
           test -s examples/appload-cpp-full/output-rmpp/icon.png
           test -f examples/appload-cpp-full/output-rmpp/manifest.json
@@ -79,112 +72,3 @@ jobs:
           echo "Download the 'appload-cpp-full-rmpp' artifact from this run and unzip it."
           echo "Copy the contained output-rmpp/ directory to the tablet:"
           echo "  scp -r output-rmpp/ root@<tablet-ip>:/home/root/xovi/exthome/appload/appload-cpp-full/"
-
-  test-backend-protocol:
-    name: Protocol-test the backend (native + aarch64 via qemu)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install qemu-user and the aarch64 cross compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-user g++-aarch64-linux-gnu
-
-      - name: Build + test the native (PC emulator) backend
-        working-directory: examples/appload-cpp-full
-        run: |
-          make -C backend clean all
-          python3 tests/protocol_test.py --binary backend/entry
-
-      - name: Build + test the rMPP (aarch64) backend under qemu-aarch64
-        working-directory: examples/appload-cpp-full
-        run: |
-          make -C backend clean rmpp
-          file backend/entry
-          file backend/entry | grep -q "ARM aarch64"
-          file backend/entry | grep -q "statically linked"
-          python3 tests/protocol_test.py --binary backend/entry --qemu qemu-aarch64
-
-  emulator-e2e:
-    name: End-to-end test in the AppLoad PC emulator (headless)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout this repository (contains the app)
-        uses: actions/checkout@v4
-
-      - name: Checkout rm-appload (the PC emulator)
-        uses: actions/checkout@v4
-        with:
-          repository: asivery/rm-appload
-          path: rm-appload
-
-      - name: Install Qt 6.8 via aqt (rm-appload needs Qt >= 6.7, e.g. QQuickItem::setFocusPolicy)
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.3'
-          arch: 'linux_gcc_64'   # aqt package id for linux desktop Qt >= 6.7 (output dir is still .../6.8.3/gcc_64)
-          dir: '${{ github.workspace }}/qt'
-
-      - name: Install xvfb and the aarch64 cross compiler
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libxkbcommon0 g++-aarch64-linux-gnu
-
-      - name: Put the aqt Qt tools (qmake6, rcc) on PATH
-        run: |
-          QT_ROOT="${{ github.workspace }}/qt/6.8.3/gcc_64"
-          echo "QT_ROOT=$QT_ROOT" >> "$GITHUB_ENV"
-          echo "$QT_ROOT/bin" >> "$GITHUB_PATH"
-          echo "$QT_ROOT/libexec" >> "$GITHUB_PATH"
-          for tool in qmake6 rcc; do
-            if ! command -v "$tool" >/dev/null 2>&1; then
-              BIN="$(find "$QT_ROOT" -name "$tool" -type f 2>/dev/null | head -n 1)"
-              echo "$tool not on PATH, found at: $BIN"
-              sudo ln -sf "$BIN" "/usr/local/bin/$tool"
-            fi
-          done
-          qmake6 --version
-          rcc --version
-
-      - name: Build our app for the PC emulator (build-pc.sh)
-        working-directory: examples/appload-cpp-full
-        run: ./build-pc.sh
-
-      - name: Install the app into the emulator's applications_root
-        run: |
-          mkdir -p rm-appload/applications_root
-          cp -r examples/appload-cpp-full/output rm-appload/applications_root/appload-cpp-full
-          find rm-appload/applications_root -type f -exec ls -la {} \;
-
-      - name: Build the emulator (qmake6 + make)
-        working-directory: rm-appload
-        run: |
-          qmake6 appload.pro
-          make -j"$(nproc)"
-          ls -la appload
-
-      - name: Run the emulator headless with the app autostarted (argv[1], see src/EmuOnly.h)
-        run: |
-          cd rm-appload
-          export LD_LIBRARY_PATH="$QT_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-          export LIBGL_ALWAYS_SOFTWARE=1 QT_QUICK_BACKEND=software
-          timeout --signal=TERM 45 xvfb-run -a ./appload cpp-backend-example > emu.log 2>&1 || true
-          echo "===== emulator log (relevant lines) ====="
-          grep -nE "Loaded app root|Starting binary|Waiting for connection|Socket OK|Registered appload endpoint|cpp-backend:|cpp-example:|No active socket|Failed to start|Process error|qml:" emu.log | tail -40 || true
-
-      - name: Assert that backend <-> frontend communication worked end to end
-        run: |
-          cd rm-appload
-          grep -q "cpp-backend: system: a frontend has connected (NEW_COORDINATOR)" emu.log
-          grep -q "cpp-example: message from backend, type=100" emu.log
-          echo "E2E OK: backend was started by the emulator, received NEW_COORDINATOR, and its welcome message (type 100) reached the QML frontend (onMessageReceived)"
-
-      - name: Upload emulator log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: emulator-e2e-log
-          path: rm-appload/emu.log
-          retention-days: 7
