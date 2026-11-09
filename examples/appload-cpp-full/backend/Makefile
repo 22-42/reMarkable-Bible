@@ -24,15 +24,17 @@ $(TARGET): $(SRC) $(HDR)
 
 # reMarkable 1/2: armv7 hard-float with NEON/VFPv4, like the rustflags
 # (+neon,+vfp4) in the .cargo/config.toml of the Rust example.
-# libstdc++/libgcc are linked statically so the binary does not depend on a
-# specific libstdc++ version on the device.
+# -static: fully static binary, so it runs on the tablet regardless of the
+# device's glibc version (a dynamically linked cross build can fail with
+# "GLIBC_x.yy not found" on the device).
 rm: CXX      := arm-linux-gnueabihf-g++
-rm: CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard -static-libstdc++ -static-libgcc
+rm: CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard -static
 rm: $(TARGET)
 
-# reMarkable Paper Pro: aarch64 (glibc), same target triple as the Rust example.
+# reMarkable Paper Pro: aarch64 (glibc), same target triple as the Rust example,
+# but linked fully static (-static) so it runs on the device's glibc, too.
 rmpp: CXX      := aarch64-linux-gnu-g++
-rmpp: CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -static-libstdc++ -static-libgcc
+rmpp: CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -static
 rmpp: $(TARGET)
 
 clean:

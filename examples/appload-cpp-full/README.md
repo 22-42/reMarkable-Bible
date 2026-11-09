@@ -62,8 +62,63 @@ The backend alone can also be built by hand:
 
 ```bash
 make -C backend          # native  -> backend/entry
-make -C backend rm       # armv7   -> backend/entry
-make -C backend rmpp     # aarch64 -> backend/entry
+make -C backend rm       # armv7   -> backend/entry (fully static)
+make -C backend rmpp     # aarch64 -> backend/entry (fully static)
+```
+
+The cross builds (`rm`, `rmpp`) are linked **fully static** (`-static`), so the
+binary runs on the tablet regardless of the device's glibc version. A dynamically
+linked cross build can fail on the device with `GLIBC_x.yy not found` — the backend
+would then never start and the frontend would show no backend messages at all.
+
+## Testing
+
+### Backend protocol test (local or CI)
+
+`tests/protocol_test.py` plays the role of the AppLoad coordinator (mirrors
+`src/management.cpp` / `src/protocol.h` of rm-appload): it creates a `SOCK_SEQPACKET`
+unix socket, starts the backend with the socket path as `argv[1]` and checks the whole
+message exchange (system messages, echo incl. a 100 KiB payload, counter, stats,
+clean shutdown on socket close).
+
+```bash
+make -C backend all
+python3 tests/protocol_test.py --binary backend/entry                      # native (PC)
+# rMPP binary on an x86_64 machine (needs qemu-user):
+python3 tests/protocol_test.py --binary backend/entry --qemu qemu-aarch64
+```
+
+### End-to-end in the AppLoad PC emulator
+
+The CI job `emulator-e2e` (see `.github/workflows/build-appload-cpp-full.yml`) builds the
+rm-appload PC emulator (`qmake6 appload.pro && make`), installs the PC build of this app
+into `applications_root/` and runs `xvfb-run ./appload cpp-backend-example` headless — the
+emulator autostarts the app passed as `argv[1]` (see `src/EmuOnly.h` of rm-appload). The job
+asserts that the backend was started, received `NEW_COORDINATOR`, and that its welcome
+message (type 100) arrived in the QML frontend (`onMessageReceived` -> `console.log`).
+
+Locally on Linux:
+
+```bash
+git clone https://github.com/asivery/rm-appload.git && cd rm-appload
+qmake6 appload.pro && make
+mkdir -p applications_root
+cp -r <this repo>/examples/appload-cpp-full/output applications_root/appload-cpp-full
+./appload cpp-backend-example     # argv[1] = app id from manifest.json -> autostart
+```
+
+### Diagnosing on the tablet
+
+The backend's stdout/stderr are forwarded by AppLoad (`QProcess::ForwardedChannels`),
+so they end up in the journal. If the frontend shows but the backend does not answer:
+
+```bash
+APP=/home/root/xovi/exthome/appload/appload-cpp-full
+ls -la "$APP" "$APP/backend"
+"$APP/backend/entry"; echo "exit=$?"     # no args -> usage, exit 2; loader error -> glibc mismatch
+ldd --version | head -1                   # glibc version of the tablet
+ldd "$APP/backend/entry" 2>&1 | head
+journalctl -b --no-pager | grep -iE 'appload|cpp-backend|Starting binary|No active socket|Failed to start' | tail -60
 ```
 
 ## CI build (GitHub Actions)
