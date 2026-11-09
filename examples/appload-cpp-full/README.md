@@ -109,12 +109,16 @@ cp -r <this repo>/examples/appload-cpp-full/output applications_root/appload-cpp
 
 ### Diagnosing on the tablet
 
-The backend's stdout/stderr are forwarded by AppLoad (`QProcess::ForwardedChannels`),
-so they end up in the journal. If the frontend shows but the backend does not answer:
+The backend logs every message and reply to **stderr** (forwarded by AppLoad into the
+journal) **and to a log file** — by default `backend.log` in the app directory (AppLoad
+sets the backend's working directory to the app root), override with the
+`APPLOAD_LOG_FILE` env var. On fatal signals a crash marker is appended to the log.
 
 ```bash
 APP=/home/root/xovi/exthome/appload/appload-cpp-full
 ls -la "$APP" "$APP/backend"
+test -x "$APP/backend/entry" || chmod +x "$APP/backend/entry"   # AppLoad exec()s it -- without +x nothing happens
+cat "$APP/backend.log"                                        # backend log file on the device
 "$APP/backend/entry"; echo "exit=$?"     # no args -> usage, exit 2; loader error -> glibc mismatch
 ldd --version | head -1                   # glibc version of the tablet
 ldd "$APP/backend/entry" 2>&1 | head
@@ -142,6 +146,13 @@ scp -r output-rmpp/ root@<tablet-ip>:/home/root/xovi/exthome/appload/appload-cpp
   `PacketHeader { int type; int messageLength; }` in `src/protocol.h` of rm-appload),
   followed by `length` bytes of payload. Maximum payload: **10 MiB** (`length == 0`
   means an empty payload).
+- **Pitfall:** the coordinator (`sendMessageTo()` in `src/management.cpp`) sends the
+  payload packet *even when `length == 0`*, and a zero-length `send()` on
+  `SOCK_SEQPACKET` enqueues an empty packet that `recv()` reports as `0` — the same
+  value as EOF. A backend that treats `recv() == 0` as "socket closed" after a header
+  with `length == 0` shuts itself down, and AppLoad then closes the frontend (looks
+  like an app crash). `appload_client.cpp` therefore drains such empty packets
+  (`MSG_PEEK` + `MSG_DONTWAIT`) before reading the next header.
 - Replies use the same framing and are broadcast to all connected frontends.
 - System message types: `0xFFFFFFFF` TERMINATE (delivered once more when the socket
   closes, then the backend should exit), `0xFFFFFFFE` NEW_COORDINATOR (a frontend

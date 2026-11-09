@@ -120,28 +120,33 @@ jobs:
           repository: asivery/rm-appload
           path: rm-appload
 
-      - name: Install Qt6, xvfb and build tools
+      - name: Install Qt 6.8 via aqt (rm-appload needs Qt >= 6.7, e.g. QQuickItem::setFocusPolicy)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: 'gcc_64'
+          dir: '${{ github.workspace }}/qt'
+
+      - name: Install xvfb and the aarch64 cross compiler
         run: |
           sudo apt-get update
-          # noble package names: Qt6 QuickControls2 dev files are in qt6-declarative-dev,
-          # the QML modules are qml6-module-qtquick[-controls|-window|-layouts|-templates]
-          sudo apt-get install -y --no-install-recommends \
-            qt6-base-dev qt6-declarative-dev qt6-base-dev-tools qmake6 \
-            qml6-module-qtqml qml6-module-qtquick qml6-module-qtquick-window \
-            qml6-module-qtquick-layouts qml6-module-qtquick-templates qml6-module-qtquick-controls \
-            xvfb libgl1-mesa-dev libgl1-mesa-dri libxkbcommon-dev g++-aarch64-linux-gnu
-          # rcc/qmake6 may live in /usr/lib/qt6/{bin,libexec} on Ubuntu 24.04
-          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
-          echo "/usr/lib/qt6/libexec" >> "$GITHUB_PATH"
-          for tool in rcc qmake6; do
+          sudo apt-get install -y --no-install-recommends xvfb libgl1-mesa-dri libxkbcommon0 g++-aarch64-linux-gnu
+
+      - name: Put the aqt Qt tools (qmake6, rcc) on PATH
+        run: |
+          QT_ROOT="${{ github.workspace }}/qt/6.8.3/gcc_64"
+          echo "QT_ROOT=$QT_ROOT" >> "$GITHUB_ENV"
+          echo "$QT_ROOT/bin" >> "$GITHUB_PATH"
+          echo "$QT_ROOT/libexec" >> "$GITHUB_PATH"
+          for tool in qmake6 rcc; do
             if ! command -v "$tool" >/dev/null 2>&1; then
-              BIN="$(find /usr/lib/qt6 -name "$tool" -type f 2>/dev/null | head -n 1)"
+              BIN="$(find "$QT_ROOT" -name "$tool" -type f 2>/dev/null | head -n 1)"
               echo "$tool not on PATH, found at: $BIN"
               sudo ln -sf "$BIN" "/usr/local/bin/$tool"
             fi
           done
-          rcc --version
           qmake6 --version
+          rcc --version
 
       - name: Build our app for the PC emulator (build-pc.sh)
         working-directory: examples/appload-cpp-full
@@ -163,6 +168,7 @@ jobs:
       - name: Run the emulator headless with the app autostarted (argv[1], see src/EmuOnly.h)
         run: |
           cd rm-appload
+          export LD_LIBRARY_PATH="$QT_ROOT/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           export LIBGL_ALWAYS_SOFTWARE=1 QT_QUICK_BACKEND=software
           timeout --signal=TERM 45 xvfb-run -a ./appload cpp-backend-example > emu.log 2>&1 || true
           echo "===== emulator log (relevant lines) ====="

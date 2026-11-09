@@ -20,5 +20,6 @@ rcc --binary -o output-rmpp/resources.rcc application.qrc
 
 make -C backend clean rmpp
 cp backend/entry output-rmpp/backend/entry
+chmod +x output-rmpp/backend/entry   # AppLoad exec()s backend/entry -- it must be executable
 
 echo "Built ./output-rmpp"

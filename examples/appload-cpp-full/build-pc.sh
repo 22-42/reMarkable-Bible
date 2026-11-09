@@ -19,5 +19,6 @@ rcc --binary -o output/resources.rcc application.qrc
 
 make -C backend clean all
 cp backend/entry output/backend/entry
+chmod +x output/backend/entry   # AppLoad exec()s backend/entry -- it must be executable
 
 echo "Built ./output"

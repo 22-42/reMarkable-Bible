@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -97,11 +98,27 @@ int AppLoad::run() {
         if (header.length > 0) {
             const ssize_t m = recv(fd, buffer.data(), header.length, 0);
             if (m < 1) {
-                std::cerr << "appload: failed to receive payload: "
-                          << std::strerror(errno) << std::endl;
-                return 1;
+                break; // socket closed in the middle of a message
             }
             contents.assign(buffer.data(), static_cast<size_t>(m));
+        } else {
+            // The AppLoad coordinator (sendMessageTo() in src/management.cpp of
+            // rm-appload) always sends a payload packet, even when length == 0.
+            // On SOCK_SEQPACKET a zero-length send() enqueues an EMPTY packet that
+            // recv() reports as 0 -- the same value as EOF. If we did not drain it,
+            // the next header recv() would return 0 and we would wrongly shut down;
+            // AppLoad would then terminate() and close the frontend ("app crash").
+            pollfd pfd{fd, POLLIN, 0};
+            if (poll(&pfd, 1, 50) > 0) {
+                char peek = 0;
+                const ssize_t p = recv(fd, &peek, 1, MSG_PEEK | MSG_DONTWAIT);
+                if (p == 0) {
+                    // next queued packet is empty (or EOF): consume it
+                    char drain;
+                    recv(fd, &drain, 1, MSG_DONTWAIT);
+                }
+                // p == 1: next packet has data (a new header) -> leave it queued
+            }
         }
 
         backend->handleMessage(replier, Message{header.msg_type, std::move(contents)});

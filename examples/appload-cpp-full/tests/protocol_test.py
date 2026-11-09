@@ -61,15 +61,20 @@ def main():
 
     cmd = ([args.qemu] if args.qemu else []) + [binary, sock_path]
     print("starting backend:", " ".join(cmd))
-    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # backend stdout/stderr go to a file (not a PIPE) so chatty logging can never
+    # block the backend on a full pipe
+    errfile = tempfile.NamedTemporaryFile(prefix="appload-backend-", suffix=".log", delete=False)
+    proc = subprocess.Popen(cmd, stdout=errfile, stderr=errfile)
 
     conn, _ = srv.accept()
     print("backend connected to the coordinator socket")
 
     def send_msg(msg_type, payload=b""):
+        # like sendMessageTo() in src/management.cpp of rm-appload: the payload
+        # packet is ALWAYS sent, even when empty (a zero-length send on
+        # SOCK_SEQPACKET enqueues an empty packet that recv() reports as 0)
         conn.send(struct.pack("<II", msg_type, len(payload)))
-        if payload:
-            conn.send(payload)
+        conn.send(payload)
 
     def recv_msg():
         hdr = conn.recv(8)
@@ -122,16 +127,25 @@ def main():
     t, d = recv_msg()
     check(t == MSG_ECHO_REPLY and b"still alive" in d, "unknown type handled, backend still responsive")
 
-    # 7) empty payload (length 0) is valid
+    # 7) empty payload (length 0) is valid -- sent as header + zero-length packet,
+    #    exactly like the real coordinator. The backend must reply AND stay alive
+    #    (a zero-length packet must not be mistaken for EOF).
     send_msg(MSG_ECHO_REQUEST)
     t, d = recv_msg()
     check(t == MSG_ECHO_REPLY, f"empty payload message ok (type {t})")
+    send_msg(MSG_INCREMENT)
+    t, d = recv_msg()
+    check(t == MSG_COUNTER_REPLY and b"counter = 3" in d,
+          f"backend still alive after empty-payload message (type {t}: {d!r})")
 
     # 8) closing the socket -> backend delivers TERMINATE to itself and exits 0
     conn.close()
     srv.close()
     rc = proc.wait(timeout=15)
-    err = proc.stderr.read().decode(errors="replace")
+    errfile.close()
+    with open(errfile.name, errors="replace") as f:
+        err = f.read()
+    os.unlink(errfile.name)
     print("--- backend stderr ---")
     print(err)
     print("-----------------------")
