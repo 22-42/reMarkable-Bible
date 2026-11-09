@@ -124,7 +124,7 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.3'
-          arch: 'gcc_64'
+          arch: 'linux_gcc_64'   # aqt package id for linux desktop Qt >= 6.7 (output dir is still .../6.8.3/gcc_64)
           dir: '${{ github.workspace }}/qt'
 
       - name: Install xvfb and the aarch64 cross compiler
