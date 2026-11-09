@@ -66,6 +66,18 @@ make -C backend rm       # armv7   -> backend/entry
 make -C backend rmpp     # aarch64 -> backend/entry
 ```
 
+## CI build (GitHub Actions)
+
+The workflow [`.github/workflows/build-appload-cpp-full.yml`](../../.github/workflows/build-appload-cpp-full.yml)
+builds the complete app for the **rMPP (aarch64)** — frontend (`resources.rcc` via `rcc`) and
+C++ backend — on every push/PR that touches this directory, and manually via "Run workflow"
+in the Actions tab. Download the `appload-cpp-full-rmpp` artifact from the workflow run and
+copy the contained `output-rmpp/` directory to the tablet:
+
+```bash
+scp -r output-rmpp/ root@<tablet-ip>:/home/root/xovi/exthome/appload/appload-cpp-full/
+```
+
 ## The AppLoad backend protocol (implemented in `backend/src/`)
 
 - AppLoad starts the backend binary with **argv[1] = path of a temporary unix socket**.

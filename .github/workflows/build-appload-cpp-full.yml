@@ -1,0 +1,67 @@
+name: Build AppLoad example app (rMPP / aarch64)
+
+# Builds the complete example app in examples/appload-cpp-full/
+# (QML frontend -> resources.rcc via rcc, C++ backend -> aarch64 binary)
+# and uploads the ready-to-install output-rmpp/ directory as an artifact.
+#
+# Install on the tablet (rMPP):
+#   download the 'appload-cpp-full-rmpp' artifact, unzip it, then:
+#   scp -r output-rmpp/ root@<tablet-ip>:/home/root/xovi/exthome/appload/appload-cpp-full/
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'examples/appload-cpp-full/**'
+      - '.github/workflows/build-appload-cpp-full.yml'
+  pull_request:
+    paths:
+      - 'examples/appload-cpp-full/**'
+      - '.github/workflows/build-appload-cpp-full.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-rmpp:
+    name: Build appload-cpp-full for reMarkable Paper Pro (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install rcc (Qt6) and the aarch64 cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qt6-base-dev-tools g++-aarch64-linux-gnu
+          echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/qt6/bin:$PATH"
+          rcc --version
+          aarch64-linux-gnu-g++ --version | head -n 1
+
+      - name: Build frontend (resources.rcc) + backend (aarch64) via build-rmpp.sh
+        working-directory: examples/appload-cpp-full
+        run: ./build-rmpp.sh
+
+      - name: Verify build output
+        run: |
+          file examples/appload-cpp-full/output-rmpp/backend/entry
+          file examples/appload-cpp-full/output-rmpp/backend/entry | grep -q "ARM aarch64"
+          test -s examples/appload-cpp-full/output-rmpp/resources.rcc
+          test -s examples/appload-cpp-full/output-rmpp/icon.png
+          test -f examples/appload-cpp-full/output-rmpp/manifest.json
+          find examples/appload-cpp-full/output-rmpp -type f -exec ls -la {} \;
+
+      - name: Upload installable app directory as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: appload-cpp-full-rmpp
+          path: examples/appload-cpp-full/output-rmpp
+          retention-days: 30
+
+      - name: How to install on the tablet
+        run: |
+          echo "Download the 'appload-cpp-full-rmpp' artifact from this run and unzip it."
+          echo "Copy the contained output-rmpp/ directory to the tablet:"
+          echo "  scp -r output-rmpp/ root@<tablet-ip>:/home/root/xovi/exthome/appload/appload-cpp-full/"
