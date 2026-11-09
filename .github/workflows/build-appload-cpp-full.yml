@@ -35,8 +35,15 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qt6-base-dev-tools g++-aarch64-linux-gnu
+          # qt6-base-dev-tools does not always put rcc on PATH (it lives in
+          # /usr/lib/qt6/libexec on Ubuntu 24.04) -> locate it and symlink it
           echo "/usr/lib/qt6/bin" >> "$GITHUB_PATH"
-          export PATH="/usr/lib/qt6/bin:$PATH"
+          echo "/usr/lib/qt6/libexec" >> "$GITHUB_PATH"
+          if ! command -v rcc >/dev/null 2>&1; then
+            RCC_BIN="$(find /usr/lib/qt6 -name rcc -type f 2>/dev/null | head -n 1)"
+            echo "rcc not on PATH, found at: $RCC_BIN"
+            sudo ln -sf "$RCC_BIN" /usr/local/bin/rcc
+          fi
           rcc --version
           aarch64-linux-gnu-g++ --version | head -n 1
 
