@@ -1,6 +1,6 @@
 name: Build AppLoad example app (rMPP / aarch64)
 
-# Builds the complete example app in examples/appload-cpp-full/
+# Builds the complete example app in AI-Example/
 # (QML frontend -> resources.rcc via rcc, C++ backend -> aarch64 binary)
 # and uploads the ready-to-install output-rmpp/ directory as an artifact.
 #
@@ -12,11 +12,11 @@ on:
   push:
     branches: [main]
     paths:
-      - 'examples/appload-cpp-full/**'
+      - 'AI-Example/**'
       - '.github/workflows/build-appload-cpp-full.yml'
   pull_request:
     paths:
-      - 'examples/appload-cpp-full/**'
+      - 'AI-Example/**'
       - '.github/workflows/build-appload-cpp-full.yml'
   workflow_dispatch:
 
@@ -48,23 +48,23 @@ jobs:
           aarch64-linux-gnu-g++ --version | head -n 1
 
       - name: Build frontend (resources.rcc) + backend (aarch64) via build-rmpp.sh
-        working-directory: examples/appload-cpp-full
+        working-directory: AI-Example
         run: ./build-rmpp.sh
 
       - name: Verify build output
         run: |
-          file examples/appload-cpp-full/output-rmpp/backend/entry
-          file examples/appload-cpp-full/output-rmpp/backend/entry | grep -q "ARM aarch64"
-          test -s examples/appload-cpp-full/output-rmpp/resources.rcc
-          test -s examples/appload-cpp-full/output-rmpp/icon.png
-          test -f examples/appload-cpp-full/output-rmpp/manifest.json
-          find examples/appload-cpp-full/output-rmpp -type f -exec ls -la {} \;
+          file AI-Example/output-rmpp/backend/entry
+          file AI-Example/output-rmpp/backend/entry | grep -q "ARM aarch64"
+          test -s AI-Example/output-rmpp/resources.rcc
+          test -s AI-Example/output-rmpp/icon.png
+          test -f AI-Example/output-rmpp/manifest.json
+          find AI-Example/output-rmpp -type f -exec ls -la {} \;
 
       - name: Upload installable app directory as artifact
         uses: actions/upload-artifact@v4
         with:
           name: appload-cpp-full-rmpp
-          path: examples/appload-cpp-full/output-rmpp
+          path: AI-Example/output-rmpp
           retention-days: 30
 
       - name: How to install on the tablet

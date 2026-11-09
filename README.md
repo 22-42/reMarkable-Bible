@@ -10,6 +10,6 @@ This is a students project ment to solidifying my C++ knowledge. Additionally I'
 
 ## Contents 🗂️
 
-- [x] **AI-example**: example AppLoad app with a *QML frontend and a C++ backend* to understand the socket communication; based on the [Rust backend app](https://github.com/asivery/rm-appload/examples/appload/full) from Asiverys Appload AI cooked some fancy stuff I guess; including build scripts for PC-emulator, rM1/2 (armv7) and rMPP (aarch64); see [examples/appload-cpp-full/README.md](examples/appload-cpp-full/README.md) for details on apploads app architecture using C++
-- [ ] **Human example**:
+- [x] **AI-Example**: example AppLoad app with a *QML frontend and a C++ backend* to understand the socket communication; based on the [Rust backend app](https://github.com/asivery/rm-appload/examples/appload/full) from Asiverys Appload AI cooked some fancy stuff I guess; including build scripts for PC-emulator, rM1/2 (armv7) and rMPP (aarch64); see [examples/appload-cpp-full/README.md](examples/appload-cpp-full/README.md) for details on apploads app architecture using C++
+- [ ] **Human-Example**:
 - [ ] **src**: will be populated with code of bible app; architecture: bible modules in Zefanija-XML format, C++ backend, QML frontend
