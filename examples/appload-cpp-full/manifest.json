@@ -1,0 +1,8 @@
+{
+    "name": "C++ Backend Demo",
+    "loadsBackend": true,
+    "entry": "/ui/example.qml",
+    "id": "cpp-backend-example",
+    "supportsScaling": false,
+    "canHaveMultipleFrontends": true
+}
